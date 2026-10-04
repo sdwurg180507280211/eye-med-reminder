@@ -210,6 +210,10 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
         builder: (_) => ReminderPage(name: patient!.name, event: event),
       ),
     );
+    if (mounted) {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      setState(() => tab = 0);
+    }
     showingReminder = false;
     showNextReminder();
   }
@@ -1193,7 +1197,11 @@ class _ReminderPageState extends State<ReminderPage> {
         fallback();
       }
     } catch (_) {
-      await tts.stop();
+      try {
+        await tts.stop();
+      } catch (_) {
+        /* Text and static dog remain available. */
+      }
       fallback();
     }
     if (mounted) {

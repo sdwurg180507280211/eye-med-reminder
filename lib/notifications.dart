@@ -10,6 +10,7 @@ class ReminderNotifications {
   bool ready = false;
   DateTime? scheduledUntil;
   bool exact = false;
+  bool exactRequested = false;
   Future<void> _tail = Future.value();
   Future<void> initialize(void Function(String) open) async {
     tzdata.initializeTimeZones();
@@ -66,7 +67,8 @@ class ReminderNotifications {
     exact =
         android == null ||
         (await android.canScheduleExactNotifications() ?? false);
-    if (android != null && !exact) {
+    if (android != null && !exact && !exactRequested) {
+      exactRequested = true;
       exact = await android.requestExactAlarmsPermission() ?? false;
     }
     var id = 0;
