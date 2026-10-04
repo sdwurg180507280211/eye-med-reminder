@@ -1,0 +1,25 @@
+name: eye_med_reminder
+description: 眼科用药提醒助手
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: '>=3.8.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  flutter_secure_storage: ^9.2.4
+  cryptography: ^2.7.0
+  image_picker: ^1.1.2
+  path_provider: ^2.1.5
+  flutter_tts: ^4.2.3
+  flutter_local_notifications: ^19.5.0
+  timezone: ^0.10.1
+  flutter_timezone: ^5.0.1
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+flutter:
+  uses-material-design: true
