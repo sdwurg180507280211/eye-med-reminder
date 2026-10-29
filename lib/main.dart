@@ -27,17 +27,38 @@ class EyeMedApp extends StatelessWidget {
     localizationsDelegates: GlobalMaterialLocalizations.delegates,
     theme: ThemeData(
       useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff3183ee)),
-      scaffoldBackgroundColor: const Color(0xffedf6ff),
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: const Color(0xff0d6b4f),
+        primary: const Color(0xff0d6b4f),
+        surface: const Color(0xffffffff),
+      ),
+      scaffoldBackgroundColor: const Color(0xfff4f8f5),
+      textTheme: const TextTheme(
+        headlineMedium: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xff0f291e)),
+        titleLarge: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xff0f291e)),
+        titleMedium: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xff0f291e)),
+        bodyLarge: TextStyle(fontSize: 17, color: Color(0xff1e3a2b)),
+        bodyMedium: TextStyle(fontSize: 16, color: Color(0xff3d5a4c)),
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: const Color(0xfffafdff),
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+        fillColor: const Color(0xffffffff),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(52),
-          textStyle: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+          minimumSize: const Size.fromHeight(56),
+          textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        ),
+      ),
+      cardTheme: CardTheme(
+        color: Colors.white,
+        elevation: 1.0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(18),
+          side: const BorderSide(color: Color(0xffd5e5db), width: 1.2),
         ),
       ),
     ),
@@ -61,6 +82,7 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
   Timer? ticker;
   DateTime lastTick = DateTime.now();
   final seen = <String>{};
+  final Set<String> checkedInEventKeys = {};
   final queue = <ReminderEvent>[];
   bool showingReminder = false;
   List<Medication> draft = [];
@@ -205,11 +227,14 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
     showingReminder = true;
     final event = queue.removeAt(0);
     seen.add(event.key);
-    await Navigator.of(context).push(
+    final res = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => ReminderPage(name: patient!.name, event: event),
       ),
     );
+    if (res == true && event.medication != null) {
+      checkedInEventKeys.add("${event.medication!.id}_${clockLabel(event.at)}");
+    }
     if (mounted) {
       Navigator.of(context).popUntil((route) => route.isFirst);
       setState(() => tab = 0);
@@ -523,20 +548,140 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
             ),
           ],
         ),
-        Text(
-          '${draft[i].eye} · ${draft[i].dose} · ${draft[i].frequency} · ${draft[i].days}天',
+        Row(
+          children: [
+            const Text('眼别：', style: TextStyle(fontWeight: FontWeight.bold)),
+            ...['左眼', '右眼', '双眼'].map(
+              (e) => Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: ChoiceChip(
+                  label: Text(e),
+                  selected: draft[i].eye == e,
+                  onSelected: (_) => setState(() {
+                    draft[i] = Medication(
+                      id: draft[i].id,
+                      name: draft[i].name,
+                      eye: e,
+                      dose: draft[i].dose,
+                      frequency: draft[i].frequency,
+                      start: draft[i].start,
+                      days: draft[i].days,
+                      times: draft[i].times,
+                    );
+                  }),
+                ),
+              ),
+            ),
+          ],
         ),
-        Text('记录日期：${dateLabel(draft[i].start)}'),
-        Text('原始时间：${draft[i].times.join('、')}'),
+        Row(
+          children: [
+            const Text('频次：', style: TextStyle(fontWeight: FontWeight.bold)),
+            DropdownButton<String>(
+              value: frequencies.contains(draft[i].frequency)
+                  ? draft[i].frequency
+                  : frequencies.first,
+              items: frequencies
+                  .map((f) => DropdownMenuItem(value: f, child: Text(f)))
+                  .toList(),
+              onChanged: (val) {
+                if (val != null) {
+                  setState(() {
+                    draft[i] = Medication(
+                      id: draft[i].id,
+                      name: draft[i].name,
+                      eye: draft[i].eye,
+                      dose: draft[i].dose,
+                      frequency: val,
+                      start: draft[i].start,
+                      days: draft[i].days,
+                      times: draft[i].times,
+                    );
+                  });
+                }
+              },
+            ),
+            const Spacer(),
+            ActionChip(
+              avatar: const Icon(Icons.tune_outlined, size: 18, color: Color(0xff0d6b4f)),
+              label: Text(
+                '${draft[i].days} 天 (滑轮选择)',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Color(0xff0c261c)),
+              ),
+              backgroundColor: const Color(0xffe8f5f0),
+              side: const BorderSide(color: Color(0xffb7dfcc), width: 1.5),
+              onPressed: () => showDaysWheelPicker(i),
+            ),
+          ],
+        ),
+        Text('剂量：${draft[i].dose} · 记录日期：${dateLabel(draft[i].start)}'),
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            const Text('原始时间：', style: TextStyle(fontWeight: FontWeight.bold)),
+            ...draft[i].times.map(
+              (t) => InputChip(
+                label: Text(t),
+                tooltip: '删除此时间',
+                onDeleted: () => setState(() {
+                  final updated = List<String>.from(draft[i].times)..remove(t);
+                  draft[i] = Medication(
+                    id: draft[i].id,
+                    name: draft[i].name,
+                    eye: draft[i].eye,
+                    dose: draft[i].dose,
+                    frequency: draft[i].frequency,
+                    start: draft[i].start,
+                    days: draft[i].days,
+                    times: updated,
+                  );
+                }),
+              ),
+            ),
+            ActionChip(
+              avatar: const Icon(Icons.add, size: 16),
+              label: const Text('添加时间'),
+              onPressed: () async {
+                final time = await showTimePicker(
+                  context: context,
+                  initialTime: const TimeOfDay(hour: 8, minute: 0),
+                  builder: (c, child) => MediaQuery(
+                    data: MediaQuery.of(c).copyWith(alwaysUse24HourFormat: true),
+                    child: child!,
+                  ),
+                );
+                if (time != null) {
+                  final str =
+                      '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+                  setState(() {
+                    final set = {...draft[i].times, str}.toList()..sort();
+                    draft[i] = Medication(
+                      id: draft[i].id,
+                      name: draft[i].name,
+                      eye: draft[i].eye,
+                      dose: draft[i].dose,
+                      frequency: draft[i].frequency,
+                      start: draft[i].start,
+                      days: draft[i].days,
+                      times: set,
+                    );
+                  });
+                }
+              },
+            ),
+          ],
+        ),
         Text(
           '实际时间：${previewTimes(i)}',
-          style: const TextStyle(color: Color(0xff2675d6)),
+          style: const TextStyle(color: Color(0xff0d6b4f), fontWeight: FontWeight.bold),
         ),
         Row(
           children: [
             TextButton(
               onPressed: () => editMedication(i),
-              child: const Text('修改'),
+              child: const Text('完整修改'),
             ),
             TextButton(
               onPressed: () => drugInfo(context, draft[i].name),
@@ -580,6 +725,99 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
         .join('、');
   }
 
+  
+  void showDaysWheelPicker(int i) {
+    int selected = draft[i].days;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Container(
+          height: 340,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('取消', style: TextStyle(fontSize: 16)),
+                    ),
+                    Text(
+                      '${draft[i].name} · 疗程天数',
+                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Color(0xff0c261c)),
+                    ),
+                    FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xff0d6b4f),
+                        minimumSize: const Size(64, 38),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          draft[i] = Medication(
+                            id: draft[i].id,
+                            name: draft[i].name,
+                            eye: draft[i].eye,
+                            dose: draft[i].dose,
+                            frequency: draft[i].frequency,
+                            start: draft[i].start,
+                            days: selected,
+                            times: draft[i].times,
+                          );
+                        });
+                        Navigator.pop(ctx);
+                      },
+                      child: const Text('完成'),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: ListWheelScrollView.useDelegate(
+                  itemExtent: 44,
+                  perspective: 0.004,
+                  diameterRatio: 1.3,
+                  physics: const FixedExtentScrollPhysics(),
+                  controller: FixedExtentScrollController(
+                    initialItem: (draft[i].days - 1).clamp(0, 179),
+                  ),
+                  onSelectedItemChanged: (idx) {
+                    setSheetState(() => selected = idx + 1);
+                  },
+                  childDelegate: ListWheelChildBuilderDelegate(
+                    childCount: 180,
+                    builder: (ctx, idx) {
+                      final val = idx + 1;
+                      final isCurrent = val == selected;
+                      return Center(
+                        child: Text(
+                          '$val 天',
+                          style: TextStyle(
+                            fontSize: isCurrent ? 22 : 17,
+                            fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                            color: isCurrent ? const Color(0xff0d6b4f) : const Color(0xff64748b),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   List<Widget> mine() {
     final now = DateTime.now();
     final today = <ReminderEvent>[];
@@ -605,21 +843,173 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
         ),
         const Text('按时用药，守护眼睛健康。'),
       ]),
+      () {
+        final futurePlans = patient!.plans.where(
+          (p) => p.review != null && !day(p.review!).isBefore(day(now)),
+        ).toList();
+        final revDate = futurePlans.isNotEmpty ? futurePlans.first.review : review ?? DateTime(now.year, now.month, now.day + 7);
+        final diff = revDate.difference(day(now)).inDays;
+        final statusText = diff > 0
+            ? '距离门诊复查还有 $diff 天（请提前挂号预约）'
+            : diff == 0
+                ? '今天就是复查日！请备齐病历本按时就诊'
+                : '已过复查日期';
+        return panel([
+          Row(
+            children: [
+              const Icon(Icons.medical_services_outlined, color: Color(0xff0d6b4f), size: 28),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('门诊复查日期：${dateLabel(revDate)}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xff0c261c))),
+                    const SizedBox(height: 3),
+                    Text(statusText, style: const TextStyle(fontSize: 14, color: Color(0xff2e4d3f), fontWeight: FontWeight.w600)),
+                  ],
+                ),
+              ),
+              TextButton(
+                onPressed: () => setState(() => tab = 1),
+                child: const Text('修改 ›'),
+              ),
+            ],
+          ),
+        ]);
+      }(),
       panel([
         Text(notificationStatus),
         const Text('后台通过系统通知提醒；点击通知进入小狗动画与语音页面。'),
       ]),
       panel([
-        const Text('今天用药计划', style: sectionStyle),
-        if (today.isEmpty) const Text('今天没有用药提醒'),
-        for (final e in today)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Text(clockLabel(e.at), style: sectionStyle),
-            title: Text(e.title),
-            subtitle: Text(e.body),
-            onTap: () => drugInfo(context, e.title),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text('⏰ 今日用药时间轴', style: sectionStyle),
+            Text(
+              '${today.where((e) => checkedInEventKeys.contains("${e.medication?.id}_${clockLabel(e.at)}")).length} / ${today.length} 次',
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xff0d6b4f), fontSize: 16),
+            ),
+          ],
+        ),
+        if (today.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: today.isEmpty ? 0 : today.where((e) => checkedInEventKeys.contains("${e.medication?.id}_${clockLabel(e.at)}")).length / today.length,
+              minHeight: 8,
+              backgroundColor: const Color(0xffe2ede6),
+              valueColor: const AlwaysStoppedAnimation(Color(0xff0d6b4f)),
+            ),
           ),
+          const SizedBox(height: 10),
+        ],
+        if (today.isEmpty) const Text('今天没有用药提醒'),
+        for (var idx = 0; idx < today.length; idx++) ...[
+          () {
+            final e = today[idx];
+            final key = "${e.medication?.id}_${clockLabel(e.at)}";
+            final isDone = checkedInEventKeys.contains(key);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: isDone ? const Color(0xfff0fdf4) : Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: isDone ? const Color(0xff86efac) : const Color(0xffd5e5db),
+                  width: 1.5,
+                ),
+              ),
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: const Color(0xffe8f5f0),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          clockLabel(e.at),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xff0d6b4f),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          e.title,
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xff0c261c),
+                          ),
+                        ),
+                      ),
+                      if (isDone)
+                        const Chip(
+                          label: Text('已滴眼', style: TextStyle(fontSize: 12, color: Colors.white, fontWeight: FontWeight.bold)),
+                          backgroundColor: Color(0xff059669),
+                          padding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(e.body, style: const TextStyle(fontSize: 15, color: Color(0xff2e4d3f))),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: FilledButton.icon(
+                          style: FilledButton.styleFrom(
+                            backgroundColor: isDone ? const Color(0xff059669) : const Color(0xff0d6b4f),
+                            minimumSize: const Size.fromHeight(42),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              if (isDone) {
+                                checkedInEventKeys.remove(key);
+                              } else {
+                                checkedInEventKeys.add(key);
+                              }
+                            });
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(isDone ? '已撤销本次打卡' : '🎉 打卡成功！已滴眼，请闭目休息3分钟。'),
+                                duration: const Duration(seconds: 2),
+                                backgroundColor: const Color(0xff0d6b4f),
+                              ),
+                            );
+                          },
+                          icon: Icon(isDone ? Icons.check_circle : Icons.water_drop, size: 18),
+                          label: Text(isDone ? '已完成滴眼' : '💧 确认已滴眼打卡'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          minimumSize: const Size(64, 42),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                        onPressed: () => drugInfo(context, e.title),
+                        child: const Text('说明'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }(),
+        ],
       ]),
       panel([
         const Text('复查提醒', style: sectionStyle),
@@ -698,8 +1088,8 @@ class _PatientHomeState extends State<PatientHome> with WidgetsBindingObserver {
   }
 }
 
-const titleStyle = TextStyle(fontSize: 24, fontWeight: FontWeight.bold);
-const sectionStyle = TextStyle(fontSize: 18, fontWeight: FontWeight.bold);
+const titleStyle = TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Color(0xff0f291e));
+const sectionStyle = TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xff0f291e));
 Widget panel(List<Widget> children) => Card(
   margin: const EdgeInsets.only(bottom: 14),
   child: Padding(
@@ -1243,9 +1633,15 @@ class _ReminderPageState extends State<ReminderPage> {
                 onPressed: () => drugInfo(context, widget.event.title),
                 child: const Text('查看药物说明'),
               ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('结束提醒'),
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xff059669),
+                minimumSize: const Size.fromHeight(52),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text('💧 ✅ 确认用药并一键打卡', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             ),
           ]),
         ],
@@ -1299,12 +1695,32 @@ class _DogAvatarState extends State<DogAvatar>
   Widget build(BuildContext context) => Center(
     child: Semantics(
       label: '陪伴小狗',
-      child: SizedBox(
-        width: widget.size,
-        height: widget.size,
-        child: AnimatedBuilder(
-          animation: controller,
-          builder: (_, _) => CustomPaint(painter: DogPainter(controller.value)),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(widget.size / 2),
+        child: Container(
+          width: widget.size,
+          height: widget.size,
+          color: Colors.black,
+          child: AnimatedBuilder(
+            animation: controller,
+            builder: (_, _) {
+              String asset = 'assets/dog_closed.png';
+              if (widget.animate) {
+                if (controller.value > 0.66) {
+                  asset = 'assets/dog_open.png';
+                } else if (controller.value > 0.33) {
+                  asset = 'assets/dog_half.png';
+                }
+              }
+              return Image.asset(
+                asset,
+                fit: BoxFit.cover,
+                errorBuilder: (_, _, _) => CustomPaint(
+                  painter: DogPainter(controller.value),
+                ),
+              );
+            },
+          ),
         ),
       ),
     ),

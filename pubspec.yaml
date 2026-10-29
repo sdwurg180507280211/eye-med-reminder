@@ -1,4 +1,4 @@
-name: eye_med_reminder
+﻿name: eye_med_reminder
 description: 眼科用药提醒助手
 publish_to: none
 version: 0.1.0+1
@@ -23,3 +23,5 @@ dev_dependencies:
   flutter_lints: ^5.0.0
 flutter:
   uses-material-design: true
+  assets:
+    - assets/
