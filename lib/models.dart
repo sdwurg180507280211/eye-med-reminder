@@ -50,6 +50,7 @@ class Plan {
   final DateTime? review;
   final List<int> reviewDays;
   final String? photo;
+  bool remindersPaused;
   Plan({
     required this.id,
     required this.created,
@@ -57,6 +58,7 @@ class Plan {
     this.review,
     this.reviewDays = const [],
     this.photo,
+    this.remindersPaused = false,
   });
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -65,6 +67,7 @@ class Plan {
     'review': review?.toIso8601String(),
     'reviewDays': reviewDays,
     'photo': photo,
+    'remindersPaused': remindersPaused,
   };
   factory Plan.fromJson(Map<String, dynamic> j) => Plan(
     id: j['id'],
@@ -73,27 +76,36 @@ class Plan {
         .map((m) => Medication.fromJson(Map<String, dynamic>.from(m)))
         .toList(),
     review: j['review'] == null ? null : DateTime.parse(j['review']),
-    reviewDays: List<int>.from(j['reviewDays']),
+    reviewDays: List<int>.from(j['reviewDays'] ?? const []),
     photo: j['photo'],
+    remindersPaused: j['remindersPaused'] == true,
   );
 }
 
 class Patient {
   final String id, name, salt, hash;
   final List<Plan> plans;
+  final Map<String, DateTime> doseCompletions;
   Patient({
     required this.id,
     required this.name,
     required this.salt,
     required this.hash,
     required this.plans,
-  });
+    Map<String, DateTime>? doseCompletions,
+  }) : doseCompletions = Map.of(doseCompletions ?? const {});
+  bool isCompleted(ReminderEvent event) =>
+      event.medication != null &&
+      doseCompletions.containsKey(event.occurrenceKey);
   Map<String, dynamic> toJson() => {
     'id': id,
     'name': name,
     'salt': salt,
     'hash': hash,
     'plans': plans.map((p) => p.toJson()).toList(),
+    'doseCompletions': doseCompletions.map(
+      (key, value) => MapEntry(key, value.toIso8601String()),
+    ),
   };
   factory Patient.fromJson(Map<String, dynamic> j) => Patient(
     id: j['id'],
@@ -103,6 +115,9 @@ class Patient {
     plans: (j['plans'] as List)
         .map((p) => Plan.fromJson(Map<String, dynamic>.from(p)))
         .toList(),
+    doseCompletions: Map<String, dynamic>.from(
+      j['doseCompletions'] ?? const {},
+    ).map((key, value) => MapEntry(key, DateTime.parse(value as String))),
   );
   static List<Patient> decode(String raw) => (jsonDecode(raw) as List)
       .map((p) => Patient.fromJson(Map<String, dynamic>.from(p)))
@@ -113,7 +128,13 @@ class ReminderEvent {
   final DateTime at;
   final Plan plan;
   final Medication? medication;
-  ReminderEvent(this.at, this.plan, this.medication);
+  final DateTime originalAt;
+  ReminderEvent(this.at, this.plan, this.medication, {DateTime? originalAt})
+    : originalAt = originalAt ?? at;
+  // Completion belongs to the prescribed dose, even if another course is
+  // paused or ends and its ten-minute stagger subsequently changes.
+  String get occurrenceKey =>
+      '${plan.id}|${medication?.id ?? 'review'}|${originalAt.toIso8601String()}';
   String get key =>
       '${plan.id}|${medication?.id ?? 'review'}|${at.toIso8601String()}';
   String get title => medication?.name ?? '复查提醒';
@@ -129,6 +150,9 @@ List<ReminderEvent> eventsFor(
   DateTime date, {
   Map<String, int>? sharedCounts,
 }) {
+  if (plan.remindersPaused) {
+    return [];
+  }
   final counts = sharedCounts ?? <String, int>{};
   final result = <ReminderEvent>[];
   for (final m in plan.medications) {
@@ -153,12 +177,19 @@ List<ReminderEvent> eventsFor(
           ),
           plan,
           m,
+          originalAt: DateTime(
+            base.year,
+            base.month,
+            base.day,
+            parts[0],
+            parts[1],
+          ),
         ),
       );
     }
   }
   if (plan.review != null) {
-    for (final lead in plan.reviewDays) {
+    for (final lead in plan.reviewDays.toSet()) {
       final review = plan.review!;
       final at = DateTime(review.year, review.month, review.day - lead, 8);
       if (day(at) == day(date)) {
@@ -181,16 +212,43 @@ List<ReminderEvent> patientEventsFor(Patient patient, DateTime date) {
 }
 
 List<ReminderEvent> upcoming(Patient patient, DateTime now, {int limit = 60}) {
+  if (limit <= 0) {
+    return [];
+  }
   final result = <ReminderEvent>[];
   for (var i = -1; i <= 365; i++) {
     final date = DateTime(now.year, now.month, now.day + i);
     result.addAll(
-      patientEventsFor(patient, date).where((e) => e.at.isAfter(now)),
+      patientEventsFor(
+        patient,
+        date,
+      ).where((e) => e.at.isAfter(now) && !patient.isCompleted(e)),
     );
     if (result.length >= limit) {
-      break;
+      result.sort((a, b) => a.at.compareTo(b.at));
+      final nextBaseDay = DateTime(now.year, now.month, now.day + i + 1);
+      // A late dose from this base day can stagger past the next day's early
+      // doses. Stop only after later base days cannot precede our cutoff.
+      if (nextBaseDay.isAfter(result[limit - 1].at)) {
+        break;
+      }
     }
   }
   result.sort((a, b) => a.at.compareTo(b.at));
   return result.take(limit).toList();
+}
+
+// Include doses from the previous prescription day that stagger past midnight.
+// Completed doses remain visible here so the daily timeline retains history.
+List<ReminderEvent> todayEvents(Patient patient, DateTime now) {
+  final today = day(now);
+  final result = [
+    ...patientEventsFor(
+      patient,
+      DateTime(today.year, today.month, today.day - 1),
+    ),
+    ...patientEventsFor(patient, today),
+  ].where((event) => day(event.at) == today).toList();
+  result.sort((a, b) => a.at.compareTo(b.at));
+  return result;
 }
