@@ -1,10 +1,13 @@
-name: Flutter MVP checks
+name: Flutter MVP & Release Build
 on:
   push:
     branches: [main, 'codex/**']
   pull_request:
+  workflow_dispatch:
+
 permissions:
-  contents: read
+  contents: write
+
 jobs:
   android:
     runs-on: ubuntu-latest
@@ -23,11 +26,13 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed lib test
       - run: flutter analyze
       - run: flutter test
-      - run: flutter build apk --debug
+      - name: Build Android Release APK
+        run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
-          name: android-debug-apk
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: eye-med-reminder-android-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
   ios:
     runs-on: macos-latest
     steps:
